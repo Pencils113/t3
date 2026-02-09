@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="tiny touch timer — a minimal rubik's cube speedsolving timer">
+  <title>t³</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Nav Bar -->
+  <nav class="nav-bar">
+    <div class="nav-left">
+      <div class="nav-logo" title="tiny touch timer">t³</div>
+      <button class="icon-btn" id="import-btn" title="Import CSV">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="export-btn" title="Export CSV">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </button>
+      <input type="file" id="import-file" accept=".csv" style="display:none">
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab" data-page="statistics" title="Statistics">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 3v18h18"/><path d="M18 9l-5 5-4-4-3 3"/>
+        </svg>
+      </button>
+      <button class="nav-tab" data-page="leaderboard" title="Leaderboard">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="14" width="4" height="7"/><rect x="10" y="7" width="4" height="14"/><rect x="16" y="10" width="4" height="11"/>
+        </svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Timer Page -->
+  <div class="page page-timer active" id="page-timer">
+    <div class="timer-layout">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Best</div>
+            <div class="stat-value" id="stat-best">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ao5</div>
+            <div class="stat-value" id="stat-ao5">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ao12</div>
+            <div class="stat-value" id="stat-ao12">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Mean</div>
+            <div class="stat-value" id="stat-mean">—</div>
+          </div>
+        </div>
+        <div class="day-nav">
+          <button class="day-nav-btn" id="day-prev">&larr;</button>
+          <span class="day-nav-label" id="day-label">Today</span>
+          <button class="day-nav-btn" id="day-next">&rarr;</button>
+        </div>
+        <div class="times-list" id="times-list"></div>
+      </aside>
+
+      <!-- Main Timer Area -->
+      <main class="timer-main">
+        <div class="scramble-text" id="scramble-text">Generating...</div>
+        <canvas id="cube-net" width="300" height="220"></canvas>
+        <div class="timer-display" id="timer-display">0.00</div>
+        <div class="penalty-buttons" id="penalty-buttons">
+          <button class="penalty-btn" id="btn-plus2">+2</button>
+          <button class="penalty-btn" id="btn-dnf">DNF</button>
+          <button class="penalty-btn penalty-btn-delete" id="btn-delete">Delete</button>
+        </div>
+        <div class="hint-text" id="hint-text">Hold spacebar to start</div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Statistics Page -->
+  <div class="page page-statistics" id="page-statistics">
+    <div class="stats-overview" id="stats-overview"></div>
+    <div class="charts-grid">
+      <div class="chart-container chart-wide">
+        <div class="chart-header">
+          <h3>Time Trend</h3>
+          <div class="chart-filters">
+            <button class="chart-filter active" data-range="50">Last 50</button>
+            <button class="chart-filter" data-range="200">Last 200</button>
+            <button class="chart-filter" data-range="all">All</button>
+          </div>
+        </div>
+        <div class="chart-wrapper"><canvas id="chart-trend"></canvas></div>
+      </div>
+      <div class="chart-container">
+        <div class="chart-header">
+          <h3>Distribution</h3>
+          <div class="chart-filters">
+            <button class="bin-filter" data-bin="0.25">0.25s</button>
+            <button class="bin-filter" data-bin="0.5">0.5s</button>
+            <button class="bin-filter active" data-bin="1">1s</button>
+            <button class="bin-filter" data-bin="2">2s</button>
+          </div>
+        </div>
+        <div class="chart-wrapper"><canvas id="chart-distribution"></canvas></div>
+      </div>
+      <div class="chart-container">
+        <h3>Daily Activity</h3>
+        <div class="chart-wrapper"><canvas id="chart-daily"></canvas></div>
+      </div>
+      <div class="chart-container">
+        <h3>PB Progression</h3>
+        <div class="chart-wrapper"><canvas id="chart-pb"></canvas></div>
+      </div>
+      <div class="chart-container">
+        <h3>Time of Day</h3>
+        <div class="chart-wrapper"><canvas id="chart-tod"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Solves List Page -->
+  <div class="page page-leaderboard" id="page-leaderboard">
+    <div class="solves-controls">
+      <div class="solves-sort">
+        <span class="solves-sort-label">Sort by:</span>
+        <button class="sort-btn active" data-sort="time-asc">Time ↑</button>
+        <button class="sort-btn" data-sort="time-desc">Time ↓</button>
+        <button class="sort-btn" data-sort="date-desc">Newest</button>
+        <button class="sort-btn" data-sort="date-asc">Oldest</button>
+      </div>
+      <div class="solves-pagination">
+        <button class="page-btn" id="page-prev">←</button>
+        <span class="page-info">Page <span id="page-current">1</span> of <span id="page-total">1</span></span>
+        <button class="page-btn" id="page-next">→</button>
+        <input type="number" class="page-size-input" id="page-size" value="100" min="10" max="1000">
+        <span class="page-size-label">per page</span>
+      </div>
+    </div>
+    <table class="leaderboard-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Time</th>
+          <th>Date</th>
+          <th>Scramble</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Solves Detail Modal -->
+  <div class="modal-overlay" id="solves-modal-overlay">
+    <div class="modal solves-modal">
+      <button class="modal-close" id="solves-modal-close">&times;</button>
+      <div class="solves-modal-title" id="solves-modal-title"></div>
+      <div class="solves-modal-list" id="solves-modal-list"></div>
+    </div>
+  </div>
+
+  <!-- Modal Overlay -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <button class="modal-close" id="modal-close">&times;</button>
+      <div class="modal-time" id="modal-time"></div>
+      <div class="modal-date" id="modal-date"></div>
+      <div class="modal-scramble" id="modal-scramble"></div>
+      <label class="modal-label">Notes</label>
+      <textarea class="modal-notes" id="modal-notes" rows="3" placeholder="Add notes..."></textarea>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-delete" id="modal-delete">Delete</button>
+        <div class="modal-actions-right">
+          <button class="modal-btn modal-btn-save" id="modal-save">Save</button>
+          <button class="modal-btn modal-btn-cancel" id="modal-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script defer src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Data files (user's personal solve history)
+old_cube_desk_times.csv
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# Plan files
+PLAN.md
+CUBE_MOVES.md
