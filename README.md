@@ -2,6 +2,8 @@
 
 A minimal Rubik's cube speedsolving timer.
 
+**https://pencils113.github.io/t3/**
+
 ## Usage
 
 - **Hold spacebar** to arm (turns green), release to start
