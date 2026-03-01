@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
+  <script src="https://unpkg.com/cubejs/lib/cube.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -29,6 +30,11 @@
         </svg>
       </button>
       <input type="file" id="import-file" accept=".csv" style="display:none">
+      <button class="icon-btn" id="settings-btn" title="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
     </div>
     <div class="nav-tabs">
       <button class="nav-tab" data-page="statistics" title="Statistics">
@@ -36,7 +42,7 @@
           <path d="M3 3v18h18"/><path d="M18 9l-5 5-4-4-3 3"/>
         </svg>
       </button>
-      <button class="nav-tab" data-page="leaderboard" title="Leaderboard">
+      <button class="nav-tab" data-page="leaderboard" title="Solves">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="4" y="14" width="4" height="7"/><rect x="10" y="7" width="4" height="14"/><rect x="16" y="10" width="4" height="11"/>
         </svg>
@@ -85,7 +91,10 @@
           <button class="penalty-btn" id="btn-dnf">DNF</button>
           <button class="penalty-btn penalty-btn-delete" id="btn-delete">Delete</button>
         </div>
-        <div class="hint-text" id="hint-text">Hold spacebar to start</div>
+        <div class="hint-text" id="hint-text">
+          <span class="hint-text-keyboard">Hold spacebar to start</span>
+          <span class="hint-text-touch">Hold to start</span>
+        </div>
       </main>
     </div>
   </div>
@@ -96,7 +105,7 @@
     <div class="charts-grid">
       <div class="chart-container chart-wide">
         <div class="chart-header">
-          <h3>Time Trend</h3>
+          <h3>Time Trend <span id="trend-subtitle" style="font-weight:400;font-size:0.75rem;color:var(--text-muted);"></span></h3>
           <div class="chart-filters">
             <button class="chart-filter active" data-range="50">Last 50</button>
             <button class="chart-filter" data-range="200">Last 200</button>
@@ -162,6 +171,77 @@
       </thead>
       <tbody id="leaderboard-body"></tbody>
     </table>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-modal-overlay">
+    <div class="modal settings-modal">
+      <button class="modal-close" id="settings-modal-close">&times;</button>
+      <h2 class="settings-modal-title">Settings</h2>
+      <div class="settings-section">
+        <h3 class="settings-heading">Timer</h3>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Arming delay</div>
+            <div class="setting-desc">How long to hold before timer is ready (0 = instant start)</div>
+          </div>
+          <div class="setting-control">
+            <input type="range" id="setting-arm-delay" min="0" max="1000" step="50" value="300">
+            <span class="setting-value" id="setting-arm-delay-value">300ms</span>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Inspection time</div>
+            <div class="setting-desc">Countdown before solve starts (WCA standard: 15s)</div>
+          </div>
+          <div class="setting-control">
+            <select id="setting-inspection">
+              <option value="0">Off</option>
+              <option value="5">5s</option>
+              <option value="10">10s</option>
+              <option value="15">15s (WCA)</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Show cube net</div>
+            <div class="setting-desc">Display 2D scramble visualization</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle">
+              <input type="checkbox" id="setting-cube-net" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Haptic feedback</div>
+            <div class="setting-desc">Vibration on timer events (mobile only)</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle">
+              <input type="checkbox" id="setting-haptic" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3 class="settings-heading">Data</h3>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Delete all times</div>
+            <div class="setting-desc">Permanently remove all solve data</div>
+          </div>
+          <div class="setting-control">
+            <button class="setting-btn-danger" id="setting-delete-all">Delete all</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Solves Detail Modal -->

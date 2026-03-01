@@ -7,67 +7,30 @@ db.version(1).stores({
 });
 
 // ============================================================
-// Section 2 — Cube Simulation (from CUBE_MOVES.md)
+// Section 2 — Cube State via cubejs
 // ============================================================
-const SOLVED_COLORS = { U: 'w', D: 'y', F: 'g', B: 'b', R: 'r', L: 'o' };
+const FACE_COLOR = { U: '#ffffff', R: '#ef4444', F: '#22c55e', D: '#facc15', L: '#f97316', B: '#3b82f6' };
 
-function createSolvedCube() {
-  const cube = {};
-  for (const [face, color] of Object.entries(SOLVED_COLORS)) {
-    cube[face] = Array(9).fill(color);
-  }
-  return cube;
-}
-
-function rotateFaceCW(face) {
-  const c = [...face];
-  return [c[6], c[3], c[0], c[7], c[4], c[1], c[8], c[5], c[2]];
-}
-
-const MOVE_DEFS = {
-  R: ['R', [['F',2],['F',5],['F',8]], [['U',2],['U',5],['U',8]], [['B',6],['B',3],['B',0]], [['D',2],['D',5],['D',8]]],
-  L: ['L', [['F',0],['F',3],['F',6]], [['D',0],['D',3],['D',6]], [['B',8],['B',5],['B',2]], [['U',0],['U',3],['U',6]]],
-  U: ['U', [['F',0],['F',1],['F',2]], [['R',0],['R',1],['R',2]], [['B',0],['B',1],['B',2]], [['L',0],['L',1],['L',2]]],
-  D: ['D', [['F',6],['F',7],['F',8]], [['L',6],['L',7],['L',8]], [['B',6],['B',7],['B',8]], [['R',6],['R',7],['R',8]]],
-  F: ['F', [['U',6],['U',7],['U',8]], [['R',0],['R',3],['R',6]], [['D',2],['D',1],['D',0]], [['L',8],['L',5],['L',2]]],
-  B: ['B', [['U',2],['U',1],['U',0]], [['L',0],['L',3],['L',6]], [['D',6],['D',7],['D',8]], [['R',8],['R',5],['R',2]]],
-};
-
-function applyMoveCW(cube, moveName) {
-  const [face, ...groups] = MOVE_DEFS[moveName];
-  cube[face] = rotateFaceCW(cube[face]);
-  const saved = groups[3].map(([f, i]) => cube[f][i]);
-  for (let g = 3; g > 0; g--) {
-    for (let s = 0; s < 3; s++) {
-      const [df, di] = groups[g][s];
-      const [sf, si] = groups[g - 1][s];
-      cube[df][di] = cube[sf][si];
-    }
-  }
-  for (let s = 0; s < 3; s++) {
-    const [f, i] = groups[0][s];
-    cube[f][i] = saved[s];
-  }
-}
-
-function applyMove(cube, notation) {
-  const match = notation.match(/^([URFDLB])(['2]?)$/);
-  if (!match) return;
-  const [, face, mod] = match;
-  const times = mod === '2' ? 2 : mod === "'" ? 3 : 1;
-  for (let i = 0; i < times; i++) applyMoveCW(cube, face);
+function normalizeScramble(str) {
+  return str
+    .replace(/[\u2019\u2032\u02BC]/g, "'") // Unicode primes → ASCII apostrophe
+    .replace(/(\w)2'/g, '$12')             // U2' → U2 (half turn is its own inverse)
+    .trim();
 }
 
 function applyScramble(scrambleStr) {
-  const cube = createSolvedCube();
-  scrambleStr.split(/\s+/).filter(Boolean).forEach(m => applyMove(cube, m));
-  return cube;
+  const cube = new Cube();
+  cube.move(normalizeScramble(scrambleStr));
+  const s = cube.asString();
+  return {
+    U: [...s.slice(0, 9)],
+    R: [...s.slice(9, 18)],
+    F: [...s.slice(18, 27)],
+    D: [...s.slice(27, 36)],
+    L: [...s.slice(36, 45)],
+    B: [...s.slice(45, 54)],
+  };
 }
-
-const COLOR_MAP = {
-  w: '#ffffff', y: '#facc15', g: '#22c55e',
-  b: '#3b82f6', r: '#ef4444', o: '#f97316'
-};
 
 function renderCubeNet(canvasEl, scrambleStr) {
   const ctx = canvasEl.getContext('2d');
@@ -76,7 +39,6 @@ function renderCubeNet(canvasEl, scrambleStr) {
   const faceGap = 4;
   const faceSize = cellSize * 3 + gap * 2;
 
-  // Face layout in face units: U=(1,0), L=(0,1), F=(1,1), R=(2,1), B=(3,1), D=(1,2)
   const facePositions = {
     U: [1, 0], L: [0, 1], F: [1, 1], R: [2, 1], B: [3, 1], D: [1, 2]
   };
@@ -92,7 +54,8 @@ function renderCubeNet(canvasEl, scrambleStr) {
   try {
     cube = applyScramble(scrambleStr);
   } catch {
-    cube = createSolvedCube();
+    // Fallback: show solved state
+    cube = { U: Array(9).fill('U'), R: Array(9).fill('R'), F: Array(9).fill('F'), D: Array(9).fill('D'), L: Array(9).fill('L'), B: Array(9).fill('B') };
   }
 
   for (const [face, [fx, fy]] of Object.entries(facePositions)) {
@@ -103,7 +66,7 @@ function renderCubeNet(canvasEl, scrambleStr) {
       const col = i % 3;
       const x = ox + col * (cellSize + gap);
       const y = oy + row * (cellSize + gap);
-      ctx.fillStyle = COLOR_MAP[cube[face][i]] || '#333';
+      ctx.fillStyle = FACE_COLOR[cube[face][i]] || '#333';
       ctx.beginPath();
       ctx.roundRect(x, y, cellSize, cellSize, 3);
       ctx.fill();
@@ -156,8 +119,10 @@ async function loadNextScramble() {
 // ============================================================
 // Section 4 — Timer
 // ============================================================
-let timerState = 'idle'; // idle, arming, armed, running
+let timerState = 'idle'; // idle, arming, armed, inspecting, running
 let armingTimeout = null;
+let inspectionInterval = null;
+let inspectionRemaining = 0;
 let startTime = 0;
 let elapsed = 0;
 let rafId = null;
@@ -169,6 +134,77 @@ const hintText = document.getElementById('hint-text');
 const btnPlus2 = document.getElementById('btn-plus2');
 const btnDnf = document.getElementById('btn-dnf');
 const btnDelete = document.getElementById('btn-delete');
+
+// PB Celebration
+function celebratePB() {
+  // Gold glow on timer — apply directly to avoid CSS specificity issues
+  timerDisplay.style.color = '#f59e0b';
+  timerDisplay.style.textShadow = '0 0 30px rgba(245, 158, 11, 0.7), 0 0 80px rgba(245, 158, 11, 0.4)';
+  timerDisplay.style.transition = 'color 0.3s, text-shadow 0.3s';
+  setTimeout(() => {
+    timerDisplay.style.color = '';
+    timerDisplay.style.textShadow = '';
+    setTimeout(() => { timerDisplay.style.transition = ''; }, 500);
+  }, 3500);
+
+  // Confetti
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:300;';
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth * window.devicePixelRatio;
+  canvas.height = window.innerHeight * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  const colors = ['#f59e0b', '#facc15', '#fbbf24', '#6366f1', '#818cf8', '#22c55e', '#ef4444', '#ffffff'];
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const particles = [];
+  for (let i = 0; i < 150; i++) {
+    particles.push({
+      x: W / 2 + (Math.random() - 0.5) * 100,
+      y: H / 2,
+      vx: (Math.random() - 0.5) * 20,
+      vy: Math.random() * -18 - 2,
+      w: Math.random() * 10 + 5,
+      h: Math.random() * 8 + 3,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.3,
+      gravity: 0.2 + Math.random() * 0.15,
+    });
+  }
+
+  let frame = 0;
+  function animateConfetti() {
+    ctx.clearRect(0, 0, W, H);
+    let alive = false;
+    for (const p of particles) {
+      p.x += p.vx;
+      p.vy += p.gravity;
+      p.y += p.vy;
+      p.vx *= 0.99;
+      p.rotation += p.rotSpeed;
+      const opacity = Math.max(0, 1 - frame / 140);
+      if (opacity <= 0 || p.y > H + 50) continue;
+      alive = true;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+      ctx.globalAlpha = opacity;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    frame++;
+    if (alive && frame < 180) {
+      requestAnimationFrame(animateConfetti);
+    } else {
+      canvas.remove();
+    }
+  }
+  requestAnimationFrame(animateConfetti);
+}
 
 function formatTime(ms) {
   if (ms === Infinity || ms === null || ms === undefined) return 'DNF';
@@ -190,13 +226,14 @@ function updateTimerDisplay() {
 
 function setTimerState(state) {
   timerState = state;
-  timerDisplay.classList.remove('arming', 'armed', 'running');
+  timerDisplay.classList.remove('arming', 'armed', 'running', 'inspecting');
   if (state === 'arming') timerDisplay.classList.add('arming');
   else if (state === 'armed') timerDisplay.classList.add('armed');
+  else if (state === 'inspecting') timerDisplay.classList.add('inspecting');
   else if (state === 'running') timerDisplay.classList.add('running');
 
   // Full-screen mode: hide everything except timer when active
-  document.body.classList.toggle('timer-active', state === 'arming' || state === 'armed' || state === 'running');
+  document.body.classList.toggle('timer-active', state === 'arming' || state === 'armed' || state === 'inspecting' || state === 'running');
 }
 
 function getDayKey(date) {
@@ -218,56 +255,114 @@ async function saveSolve(time, scramble) {
   return id;
 }
 
+// Haptic feedback helper
+function haptic(pattern) {
+  if (settings.hapticEnabled && navigator.vibrate) navigator.vibrate(pattern);
+}
+
+// Shared timer actions
+function timerBeginArming() {
+  penaltyButtons.classList.remove('visible');
+  hintText.querySelector('.hint-text-keyboard').textContent = '';
+  hintText.querySelector('.hint-text-touch').textContent = '';
+  haptic(10);
+
+  if (settings.armDelay === 0) {
+    // Instant arm — skip arming state
+    setTimerState('armed');
+    timerDisplay.textContent = '0.00';
+    haptic([20, 30, 20]);
+  } else {
+    setTimerState('arming');
+    timerDisplay.textContent = '0.00';
+    armingTimeout = setTimeout(() => {
+      if (timerState === 'arming') {
+        setTimerState('armed');
+        haptic([20, 30, 20]);
+      }
+    }, settings.armDelay);
+  }
+}
+
+function timerCancelArming() {
+  clearTimeout(armingTimeout);
+  setTimerState('idle');
+  hintText.querySelector('.hint-text-keyboard').textContent = 'Hold spacebar to start';
+  hintText.querySelector('.hint-text-touch').textContent = 'Hold to start';
+}
+
+function timerStart() {
+  if (settings.inspection > 0 && timerState !== 'inspecting') {
+    // Start inspection countdown
+    setTimerState('inspecting');
+    inspectionRemaining = settings.inspection;
+    timerDisplay.textContent = inspectionRemaining;
+    prefetchScramble();
+    inspectionInterval = setInterval(() => {
+      inspectionRemaining--;
+      if (inspectionRemaining <= 0) {
+        clearInterval(inspectionInterval);
+        inspectionInterval = null;
+        // Auto-start the timer
+        setTimerState('running');
+        startTime = performance.now();
+        elapsed = 0;
+        updateTimerDisplay();
+      } else {
+        timerDisplay.textContent = inspectionRemaining;
+        if (inspectionRemaining <= 3) haptic(30);
+      }
+    }, 1000);
+    return;
+  }
+
+  // Start running (either no inspection, or after inspection)
+  const wasInspecting = inspectionInterval != null;
+  if (inspectionInterval) { clearInterval(inspectionInterval); inspectionInterval = null; }
+  setTimerState('running');
+  startTime = performance.now();
+  elapsed = 0;
+  hintText.querySelector('.hint-text-keyboard').textContent = '';
+  hintText.querySelector('.hint-text-touch').textContent = '';
+  if (!wasInspecting) prefetchScramble();
+  updateTimerDisplay();
+}
+
+function timerStop() {
+  cancelAnimationFrame(rafId);
+  elapsed = performance.now() - startTime;
+  timerDisplay.textContent = formatTime(elapsed);
+  setTimerState('idle');
+  penaltyButtons.classList.add('visible');
+  hintText.querySelector('.hint-text-keyboard').textContent = 'Hold spacebar to start';
+  hintText.querySelector('.hint-text-touch').textContent = 'Hold to start';
+  btnPlus2.classList.remove('active');
+  btnDnf.classList.remove('active');
+  haptic(15);
+
+  (async () => {
+    const isPB = allTimePBs.single === null || elapsed < allTimePBs.single;
+    lastSolveId = await saveSolve(elapsed, currentScramble);
+    await refreshSidebar();
+    if (isPB) celebratePB();
+    await loadNextScramble();
+  })();
+}
+
+// Keyboard events
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
   if (e.repeat) return;
 
   if (e.code === 'Space') {
     e.preventDefault();
-    if (timerState === 'idle') {
-      setTimerState('arming');
-      timerDisplay.textContent = '0.00';
-      penaltyButtons.classList.remove('visible');
-      hintText.textContent = '';
-      armingTimeout = setTimeout(() => {
-        if (timerState === 'arming') {
-          setTimerState('armed');
-        }
-      }, 300);
-    } else if (timerState === 'running') {
-      // Stop
-      cancelAnimationFrame(rafId);
-      elapsed = performance.now() - startTime;
-      timerDisplay.textContent = formatTime(elapsed);
-      setTimerState('idle');
-      penaltyButtons.classList.add('visible');
-      hintText.textContent = 'Hold spacebar to start';
-      btnPlus2.classList.remove('active');
-      btnDnf.classList.remove('active');
-
-      // Save and refresh
-      (async () => {
-        lastSolveId = await saveSolve(elapsed, currentScramble);
-        await refreshSidebar();
-        await loadNextScramble();
-      })();
-    }
+    if (timerState === 'idle') timerBeginArming();
+    else if (timerState === 'inspecting') timerStart();
+    else if (timerState === 'running') timerStop();
   } else if (timerState === 'running') {
-    // Any other key stops
-    cancelAnimationFrame(rafId);
-    elapsed = performance.now() - startTime;
-    timerDisplay.textContent = formatTime(elapsed);
-    setTimerState('idle');
-    penaltyButtons.classList.add('visible');
-    hintText.textContent = 'Hold spacebar to start';
-    btnPlus2.classList.remove('active');
-    btnDnf.classList.remove('active');
-
-    (async () => {
-      lastSolveId = await saveSolve(elapsed, currentScramble);
-      await refreshSidebar();
-      await loadNextScramble();
-    })();
+    timerStop();
+  } else if (timerState === 'inspecting') {
+    timerStart();
   }
 });
 
@@ -276,21 +371,30 @@ document.addEventListener('keyup', (e) => {
 
   if (e.code === 'Space') {
     e.preventDefault();
-    if (timerState === 'arming') {
-      clearTimeout(armingTimeout);
-      setTimerState('idle');
-      hintText.textContent = 'Hold spacebar to start';
-    } else if (timerState === 'armed') {
-      // Start running
-      setTimerState('running');
-      startTime = performance.now();
-      elapsed = 0;
-      hintText.textContent = '';
-      prefetchScramble();
-      updateTimerDisplay();
-    }
+    if (timerState === 'arming') timerCancelArming();
+    else if (timerState === 'armed') timerStart();
   }
 });
+
+// Touch events on timer area
+const timerMain = document.querySelector('.timer-main');
+
+timerMain.addEventListener('touchstart', (e) => {
+  if (e.target.closest('.penalty-btn') || e.target.closest('.time-item-delete')) return;
+  e.preventDefault();
+
+  if (timerState === 'idle') timerBeginArming();
+  else if (timerState === 'inspecting') timerStart();
+  else if (timerState === 'running') timerStop();
+}, { passive: false });
+
+timerMain.addEventListener('touchend', (e) => {
+  if (e.target.closest('.penalty-btn') || e.target.closest('.time-item-delete')) return;
+  e.preventDefault();
+
+  if (timerState === 'arming') timerCancelArming();
+  else if (timerState === 'armed') timerStart();
+}, { passive: false });
 
 // Penalty buttons
 btnPlus2.addEventListener('click', async () => {
@@ -764,6 +868,8 @@ function renderTrendChart(allSolves, range) {
   destroyChart('trend');
   let solves = range === 'all' ? allSolves : allSolves.slice(-range);
 
+  const totalBeforeSample = solves.length;
+
   // Sample if too many points for performance
   const maxPoints = 500;
   if (solves.length > maxPoints) {
@@ -771,8 +877,24 @@ function renderTrendChart(allSolves, range) {
     solves = solves.filter((_, i) => i % step === 0 || i === solves.length - 1);
   }
 
-  // Build labels (indices)
-  const labels = solves.map((_, i) => i + 1);
+  // Build labels — adapt granularity to time span
+  const spanDays = solves.length > 1 ? (solves[solves.length - 1].timestamp - solves[0].timestamp) / 86400000 : 0;
+  const labels = solves.map(s => {
+    const d = new Date(s.timestamp);
+    if (spanDays < 3) return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
+    if (spanDays < 60) return d.toLocaleString('en-US', { month: 'short', day: 'numeric' });
+    return `${d.toLocaleString('en-US', { month: 'short' })} '${String(d.getFullYear()).slice(2)}`;
+  });
+
+  // Update subtitle
+  const subtitle = document.getElementById('trend-subtitle');
+  if (subtitle) {
+    if (solves.length < totalBeforeSample) {
+      subtitle.textContent = `(${solves.length} of ${totalBeforeSample.toLocaleString()} sampled)`;
+    } else {
+      subtitle.textContent = '';
+    }
+  }
 
   // Individual times (null for DNF)
   const timeData = solves.map(s => {
@@ -835,7 +957,17 @@ function renderTrendChart(allSolves, range) {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        x: { display: false },
+        x: {
+          ticks: {
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 8,
+            callback: function(val, idx) {
+              const label = this.getLabelForValue(val);
+              return label || null;
+            }
+          }
+        },
         y: {
           ticks: {
             callback: v => v.toFixed(1) + 's'
@@ -952,14 +1084,16 @@ function renderPBChart(allSolves) {
 
   if (pbSolves.length === 0) return;
 
+  // Use {x, y} data with timestamps for proportional date spacing
+  const dataPoints = pbSolves.map(s => ({ x: s.timestamp, y: getEffectiveTime(s) / 1000 }));
+
   const ctx = document.getElementById('chart-pb').getContext('2d');
   chartInstances.pb = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: pbSolves.map(s => new Date(s.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })),
       datasets: [{
         label: 'PB',
-        data: pbSolves.map(s => getEffectiveTime(s) / 1000),
+        data: dataPoints,
         borderColor: '#f59e0b',
         backgroundColor: 'rgba(245, 158, 11, 0.2)',
         fill: true,
@@ -971,8 +1105,29 @@ function renderPBChart(allSolves) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: ctx => new Date(ctx[0].parsed.x).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            label: ctx => ctx.parsed.y.toFixed(2) + 's'
+          }
+        }
+      },
       scales: {
+        x: {
+          type: 'linear',
+          min: dataPoints[0].x,
+          max: dataPoints[dataPoints.length - 1].x,
+          ticks: {
+            maxTicksLimit: 6,
+            maxRotation: 0,
+            callback: function(val) {
+              const d = new Date(val);
+              return `${d.toLocaleString('en-US', { month: 'short' })} '${String(d.getFullYear()).slice(2)}`;
+            }
+          }
+        },
         y: { ticks: { callback: v => v.toFixed(1) + 's' } }
       }
     }
@@ -1278,7 +1433,84 @@ document.getElementById('page-size').addEventListener('change', (e) => {
 });
 
 // ============================================================
-// Section 10 — Initialization
+// Section 10 — Settings
+// ============================================================
+const defaultSettings = {
+  armDelay: 300,
+  inspection: 0,
+  showCubeNet: true,
+  hapticEnabled: true,
+};
+
+let settings = { ...defaultSettings };
+
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem('t3-settings');
+    if (saved) Object.assign(settings, JSON.parse(saved));
+  } catch {}
+  applySettings();
+}
+
+function saveSettings() {
+  localStorage.setItem('t3-settings', JSON.stringify(settings));
+  applySettings();
+}
+
+function applySettings() {
+  // Cube net visibility
+  const cubeNet = document.getElementById('cube-net');
+  if (cubeNet) cubeNet.style.display = settings.showCubeNet ? '' : 'none';
+
+  // Sync UI controls
+  document.getElementById('setting-arm-delay').value = settings.armDelay;
+  document.getElementById('setting-arm-delay-value').textContent = settings.armDelay + 'ms';
+  document.getElementById('setting-inspection').value = settings.inspection;
+  document.getElementById('setting-cube-net').checked = settings.showCubeNet;
+  document.getElementById('setting-haptic').checked = settings.hapticEnabled;
+}
+
+// Arming delay slider
+document.getElementById('setting-arm-delay').addEventListener('input', (e) => {
+  settings.armDelay = parseInt(e.target.value);
+  document.getElementById('setting-arm-delay-value').textContent = settings.armDelay + 'ms';
+  saveSettings();
+});
+
+// Inspection time
+document.getElementById('setting-inspection').addEventListener('change', (e) => {
+  settings.inspection = parseInt(e.target.value);
+  saveSettings();
+});
+
+// Show cube net
+document.getElementById('setting-cube-net').addEventListener('change', (e) => {
+  settings.showCubeNet = e.target.checked;
+  saveSettings();
+});
+
+// Haptic feedback
+document.getElementById('setting-haptic').addEventListener('change', (e) => {
+  settings.hapticEnabled = e.target.checked;
+  saveSettings();
+});
+
+// Delete all times
+document.getElementById('setting-delete-all').addEventListener('click', async () => {
+  const count = await db.solves.count();
+  if (count === 0) { alert('No solves to delete.'); return; }
+  if (!confirm(`Delete all ${count.toLocaleString()} solves? This cannot be undone.`)) return;
+  if (!confirm('Are you sure? This will permanently erase all your data.')) return;
+  await db.solves.clear();
+  invalidatePBCache();
+  allTimePBs = { single: null, ao5: null, ao12: null };
+  lastSolveId = null;
+  await refreshSidebar();
+  alert('All solves deleted.');
+});
+
+// ============================================================
+// Section 11 — Initialization
 // ============================================================
 
 // Export CSV
@@ -1429,6 +1661,18 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
   });
 });
 
+// Settings modal
+const settingsOverlay = document.getElementById('settings-modal-overlay');
+document.getElementById('settings-btn').addEventListener('click', () => {
+  settingsOverlay.classList.add('open');
+});
+document.getElementById('settings-modal-close').addEventListener('click', () => {
+  settingsOverlay.classList.remove('open');
+});
+settingsOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
+});
+
 // Initialize
 (async () => {
   // Import from CSV if database is empty
@@ -1473,6 +1717,7 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     }
   }
 
+  loadSettings();
   await computeAllTimePBs();
   await refreshSidebar();
   await loadNextScramble();
