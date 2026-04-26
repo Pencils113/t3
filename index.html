@@ -127,11 +127,26 @@
         <div class="chart-wrapper"><canvas id="chart-distribution"></canvas></div>
       </div>
       <div class="chart-container">
-        <h3>Daily Activity</h3>
+        <div class="chart-header">
+          <h3>Daily Activity</h3>
+          <div class="chart-filters">
+            <button class="bucket-filter active" data-bucket="day">Day</button>
+            <button class="bucket-filter" data-bucket="week">Week</button>
+            <button class="bucket-filter" data-bucket="month">Month</button>
+            <button class="bucket-filter" data-bucket="year">Year</button>
+          </div>
+        </div>
         <div class="chart-wrapper"><canvas id="chart-daily"></canvas></div>
       </div>
       <div class="chart-container">
-        <h3>PB Progression</h3>
+        <div class="chart-header">
+          <h3>PB Progression</h3>
+          <div class="chart-filters">
+            <button class="pb-metric-filter active" data-metric="single">Single</button>
+            <button class="pb-metric-filter" data-metric="ao5">Ao5</button>
+            <button class="pb-metric-filter" data-metric="ao12">Ao12</button>
+          </div>
+        </div>
         <div class="chart-wrapper"><canvas id="chart-pb"></canvas></div>
       </div>
       <div class="chart-container">
@@ -250,6 +265,25 @@
       <button class="modal-close" id="solves-modal-close">&times;</button>
       <div class="solves-modal-title" id="solves-modal-title"></div>
       <div class="solves-modal-list" id="solves-modal-list"></div>
+    </div>
+  </div>
+
+  <!-- Import Diff Modal -->
+  <div class="modal-overlay" id="import-modal-overlay">
+    <div class="modal import-modal">
+      <button class="modal-close" id="import-modal-close">&times;</button>
+      <h2 class="settings-modal-title">Import preview</h2>
+      <div class="import-diff" id="import-diff"></div>
+      <div class="import-modal-help">
+        <strong>Append</strong> adds only new rows. <strong>Replace</strong> wipes all current data and loads the file from scratch.
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-cancel" id="import-modal-cancel">Cancel</button>
+        <div class="modal-actions-right">
+          <button class="modal-btn modal-btn-danger" id="import-modal-replace">Replace</button>
+          <button class="modal-btn modal-btn-save" id="import-modal-append">Append</button>
+        </div>
+      </div>
     </div>
   </div>
 

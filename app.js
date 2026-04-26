@@ -1028,22 +1028,75 @@ function renderDistributionChart(allSolves, binSize = currentBinSize) {
   });
 }
 
-function renderDailyChart(allSolves) {
-  destroyChart('daily');
-  const dayCounts = {};
-  for (const s of allSolves) {
-    dayCounts[s.dayKey] = (dayCounts[s.dayKey] || 0) + 1;
-  }
+let currentActivityBucket = 'day';
 
-  // Last 30 days
+function renderDailyChart(allSolves, bucket = currentActivityBucket) {
+  destroyChart('daily');
+  currentActivityBucket = bucket;
+
   const labels = [];
   const data = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = getDayKey(d);
-    labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-    data.push(dayCounts[key] || 0);
+
+  if (bucket === 'day') {
+    const counts = {};
+    for (const s of allSolves) counts[s.dayKey] = (counts[s.dayKey] || 0) + 1;
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+      data.push(counts[getDayKey(d)] || 0);
+    }
+  } else if (bucket === 'week') {
+    // Group by Sunday-anchored week. Show last 12 weeks.
+    const weekStart = (d) => {
+      const w = new Date(d);
+      w.setHours(0, 0, 0, 0);
+      w.setDate(w.getDate() - w.getDay());
+      return w;
+    };
+    const counts = {};
+    for (const s of allSolves) {
+      const k = weekStart(new Date(s.timestamp)).getTime();
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    const thisWeek = weekStart(new Date());
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(thisWeek);
+      d.setDate(d.getDate() - i * 7);
+      labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+      data.push(counts[d.getTime()] || 0);
+    }
+  } else if (bucket === 'month') {
+    // Last 12 months including the current one.
+    const monthKey = (d) => `${d.getFullYear()}-${d.getMonth()}`;
+    const counts = {};
+    for (const s of allSolves) {
+      const d = new Date(s.timestamp);
+      counts[monthKey(d)] = (counts[monthKey(d)] || 0) + 1;
+    }
+    const today = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      labels.push(d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }));
+      data.push(counts[monthKey(d)] || 0);
+    }
+  } else if (bucket === 'year') {
+    const counts = {};
+    let minYear = Infinity;
+    let maxYear = -Infinity;
+    for (const s of allSolves) {
+      const y = new Date(s.timestamp).getFullYear();
+      counts[y] = (counts[y] || 0) + 1;
+      if (y < minYear) minYear = y;
+      if (y > maxYear) maxYear = y;
+    }
+    if (!isFinite(minYear)) {
+      minYear = maxYear = new Date().getFullYear();
+    }
+    for (let y = minYear; y <= maxYear; y++) {
+      labels.push(String(y));
+      data.push(counts[y] || 0);
+    }
   }
 
   const ctx = document.getElementById('chart-daily').getContext('2d');
@@ -1070,22 +1123,47 @@ function renderDailyChart(allSolves) {
   });
 }
 
-function renderPBChart(allSolves) {
+let currentPBMetric = 'single';
+
+function renderPBChart(allSolves, metric = currentPBMetric) {
   destroyChart('pb');
-  const pbSolves = [];
-  let runningMin = Infinity;
-  for (const s of allSolves) {
-    const t = getEffectiveTime(s);
-    if (t < runningMin) {
-      runningMin = t;
-      pbSolves.push(s);
+  currentPBMetric = metric;
+
+  // Build a series of (timestamp, value) where value is the metric at that solve.
+  // For 'single': effective time of each solve. For 'ao5'/'ao12': rolling average
+  // ending at that solve (chronologically), null until we have enough history.
+  const series = [];
+  if (metric === 'single') {
+    for (const s of allSolves) {
+      const t = getEffectiveTime(s);
+      if (t === Infinity) continue;
+      series.push({ ts: s.timestamp, val: t });
+    }
+  } else {
+    const n = metric === 'ao5' ? 5 : 12;
+    for (let i = n - 1; i < allSolves.length; i++) {
+      // calcAverage expects most-recent-first; slice chronologically then reverse.
+      const window = allSolves.slice(i - n + 1, i + 1).reverse();
+      const avg = calcAverage(window, n);
+      if (avg == null || avg === Infinity) continue;
+      series.push({ ts: allSolves[i].timestamp, val: avg });
     }
   }
 
-  if (pbSolves.length === 0) return;
+  // Reduce to running-minimum staircase.
+  const pbPoints = [];
+  let runningMin = Infinity;
+  for (const p of series) {
+    if (p.val < runningMin) {
+      runningMin = p.val;
+      pbPoints.push(p);
+    }
+  }
+
+  if (pbPoints.length === 0) return;
 
   // Use {x, y} data with timestamps for proportional date spacing
-  const dataPoints = pbSolves.map(s => ({ x: s.timestamp, y: getEffectiveTime(s) / 1000 }));
+  const dataPoints = pbPoints.map(p => ({ x: p.ts, y: p.val / 1000 }));
 
   const ctx = document.getElementById('chart-pb').getContext('2d');
   chartInstances.pb = new Chart(ctx, {
@@ -1184,6 +1262,28 @@ document.querySelectorAll('.bin-filter').forEach(btn => {
     const binSize = parseFloat(btn.dataset.bin);
     const allSolves = await db.solves.orderBy('timestamp').toArray();
     renderDistributionChart(allSolves, binSize);
+  });
+});
+
+// Daily Activity bucket buttons
+document.querySelectorAll('.bucket-filter').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('.bucket-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const bucket = btn.dataset.bucket;
+    const allSolves = await db.solves.orderBy('timestamp').toArray();
+    renderDailyChart(allSolves, bucket);
+  });
+});
+
+// PB Progression metric buttons
+document.querySelectorAll('.pb-metric-filter').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    document.querySelectorAll('.pb-metric-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const metric = btn.dataset.metric;
+    const allSolves = await db.solves.orderBy('timestamp').toArray();
+    renderPBChart(allSolves, metric);
   });
 });
 
@@ -1549,32 +1649,41 @@ document.getElementById('import-btn').addEventListener('click', () => {
   document.getElementById('import-file').click();
 });
 
+// Dedupe key uses second-precision timestamp because the export writes the
+// date via toLocaleString() (no ms), so re-imported rows would otherwise
+// differ from the in-DB row by their sub-second component and slip through.
+const importDedupeKey = (ts, time, scramble) => `${Math.floor(ts / 1000)}-${time}-${scramble}`;
+
+async function bulkAddSolves(solves) {
+  const chunkSize = 5000;
+  for (let i = 0; i < solves.length; i += chunkSize) {
+    await db.solves.bulkAdd(solves.slice(i, i + chunkSize));
+  }
+}
+
+async function refreshAfterImport() {
+  invalidatePBCache();
+  await computeAllTimePBs();
+  await refreshSidebar();
+}
+
 document.getElementById('import-file').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  const text = await file.text();
-  const lines = text.replace(/\r\n/g, '\n').trim().split('\n');
+  const text = (await file.text()).replace(/\r\n/g, '\n');
 
-  // Skip header
-  const dataLines = lines.slice(1);
-
-  // Get existing solves for deduplication (by timestamp + time + scramble)
-  const existing = await db.solves.toArray();
-  const existingKeys = new Set(existing.map(s => `${s.timestamp}-${s.time}-${s.scramble}`));
-
-  const newSolves = [];
-  let skipped = 0;
-
-  for (const line of dataLines) {
-    // Parse CSV with quoted fields
-    const fields = [];
+  // Parse the entire file as one CSV stream so quoted fields containing
+  // newlines (e.g., multi-line notes) are not split mid-field.
+  const records = [];
+  {
     let current = '';
+    let fields = [];
     let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
       if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
+        if (inQuotes && text[i + 1] === '"') {
           current += '"';
           i++;
         } else {
@@ -1583,15 +1692,25 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
       } else if (char === ',' && !inQuotes) {
         fields.push(current);
         current = '';
+      } else if (char === '\n' && !inQuotes) {
+        fields.push(current);
+        records.push(fields);
+        fields = [];
+        current = '';
       } else {
         current += char;
       }
     }
-    fields.push(current);
+    if (current.length > 0 || fields.length > 0) {
+      fields.push(current);
+      records.push(fields);
+    }
+  }
 
+  // Skip header, parse rows
+  const parsedSolves = [];
+  for (const fields of records.slice(1)) {
     if (fields.length < 5) continue;
-
-    // Parse fields: Index, Time (s), Penalty, Scramble, Date, Notes
     const timeInSec = parseFloat(fields[1]);
     const penalty = fields[2] || null;
     const scramble = fields[3];
@@ -1599,45 +1718,129 @@ document.getElementById('import-file').addEventListener('change', async (e) => {
     const notes = fields[5] || '';
 
     if (isNaN(timeInSec)) continue;
-
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) continue;
 
     const time = timeInSec * 1000;
     const timestamp = date.getTime();
-    const key = `${timestamp}-${time}-${scramble}`;
-
-    if (existingKeys.has(key)) {
-      skipped++;
-      continue;
-    }
-
-    existingKeys.add(key);
-    newSolves.push({
+    parsedSolves.push({
       timestamp,
       time,
       scramble,
       penalty: penalty === '+2' || penalty === 'DNF' ? penalty : null,
       notes,
-      dayKey: getDayKey(date)
+      dayKey: getDayKey(date),
+      key: importDedupeKey(timestamp, time, scramble)
     });
   }
 
-  if (newSolves.length > 0) {
-    // Bulk add in chunks
-    const chunkSize = 5000;
-    for (let i = 0; i < newSolves.length; i += chunkSize) {
-      await db.solves.bulkAdd(newSolves.slice(i, i + chunkSize));
-    }
-    invalidatePBCache();
-    await computeAllTimePBs();
-    await refreshSidebar();
+  // Always reset file input so the same file can be re-selected later
+  e.target.value = '';
+
+  if (parsedSolves.length === 0) {
+    alert('No valid solves found in file.');
+    return;
   }
 
-  alert(`Imported ${newSolves.length} solves, skipped ${skipped} duplicates.`);
+  // Compute diff vs current DB
+  const existing = await db.solves.toArray();
+  const existingKeys = new Set(existing.map(s => importDedupeKey(s.timestamp, s.time, s.scramble)));
 
-  // Reset file input
-  e.target.value = '';
+  const csvKeysSeen = new Set();
+  const csvDistinct = []; // first occurrence of each key in the CSV
+  let withinCsvDupes = 0;
+  for (const p of parsedSolves) {
+    if (csvKeysSeen.has(p.key)) {
+      withinCsvDupes++;
+      continue;
+    }
+    csvKeysSeen.add(p.key);
+    csvDistinct.push(p);
+  }
+
+  const toAdd = csvDistinct.filter(p => !existingKeys.has(p.key));
+  const duplicates = csvDistinct.length - toAdd.length;
+  const missing = existing.filter(s => !csvKeysSeen.has(importDedupeKey(s.timestamp, s.time, s.scramble))).length;
+
+  // Populate the diff modal
+  const fmt = (n) => n.toLocaleString();
+  const zeroClass = (n) => n === 0 ? ' zero' : '';
+  const dupSub = withinCsvDupes > 0
+    ? `in both — skipped on Append (file also contains ${fmt(withinCsvDupes)} within-file duplicate${withinCsvDupes === 1 ? '' : 's'})`
+    : 'in both — skipped on Append';
+
+  document.getElementById('import-diff').innerHTML = `
+    <div class="import-diff-row">
+      <div>
+        <div class="import-diff-label">New solves</div>
+        <div class="import-diff-sub">in file, not in DB</div>
+      </div>
+      <div class="import-diff-value${zeroClass(toAdd.length)}">${fmt(toAdd.length)}</div>
+    </div>
+    <div class="import-diff-row">
+      <div>
+        <div class="import-diff-label">Duplicates</div>
+        <div class="import-diff-sub">${dupSub}</div>
+      </div>
+      <div class="import-diff-value${zeroClass(duplicates)}">${fmt(duplicates)}</div>
+    </div>
+    <div class="import-diff-row">
+      <div>
+        <div class="import-diff-label">Missing locally</div>
+        <div class="import-diff-sub">in DB, not in file — erased on Replace</div>
+      </div>
+      <div class="import-diff-value${zeroClass(missing)}">${fmt(missing)}</div>
+    </div>
+  `;
+
+  const overlay = document.getElementById('import-modal-overlay');
+  const closeModal = () => overlay.classList.remove('open');
+
+  // Re-bind buttons fresh each import to capture this run's diff state
+  const appendBtn = document.getElementById('import-modal-append');
+  const replaceBtn = document.getElementById('import-modal-replace');
+  const cancelBtn = document.getElementById('import-modal-cancel');
+  const closeBtn = document.getElementById('import-modal-close');
+
+  const newAppend = appendBtn.cloneNode(true);
+  const newReplace = replaceBtn.cloneNode(true);
+  const newCancel = cancelBtn.cloneNode(true);
+  const newClose = closeBtn.cloneNode(true);
+  appendBtn.replaceWith(newAppend);
+  replaceBtn.replaceWith(newReplace);
+  cancelBtn.replaceWith(newCancel);
+  closeBtn.replaceWith(newClose);
+
+  newAppend.addEventListener('click', async () => {
+    closeModal();
+    if (toAdd.length === 0) {
+      alert(`Imported 0 solves, skipped ${fmt(duplicates)} duplicate${duplicates === 1 ? '' : 's'}.`);
+      return;
+    }
+    await bulkAddSolves(toAdd);
+    await refreshAfterImport();
+    alert(`Imported ${fmt(toAdd.length)} solves, skipped ${fmt(duplicates)} duplicate${duplicates === 1 ? '' : 's'}.`);
+  });
+
+  newReplace.addEventListener('click', async () => {
+    if (existing.length > 0 && !confirm(`Wipe all ${fmt(existing.length)} current solves and replace with ${fmt(csvDistinct.length)} from file? This cannot be undone.`)) {
+      return;
+    }
+    closeModal();
+    await db.solves.clear();
+    await bulkAddSolves(csvDistinct);
+    await refreshAfterImport();
+    alert(`Replaced DB with ${fmt(csvDistinct.length)} solves from file.`);
+  });
+
+  const onCancel = () => closeModal();
+  newCancel.addEventListener('click', onCancel);
+  newClose.addEventListener('click', onCancel);
+
+  // Overlay click (rebind too — safe to re-add since the listener is idempotent on the same handler)
+  overlay.onclick = (ev) => { if (ev.target === overlay) closeModal(); };
+
+  overlay.classList.add('open');
 });
 
 // Nav logo - go to timer

@@ -610,7 +610,10 @@ body {
   gap: 4px;
 }
 
-.chart-filter {
+.chart-filter,
+.bin-filter,
+.bucket-filter,
+.pb-metric-filter {
   background: none;
   border: 1px solid var(--border);
   color: var(--text-dim);
@@ -622,12 +625,18 @@ body {
   transition: all 0.15s;
 }
 
-.chart-filter:hover {
+.chart-filter:hover,
+.bin-filter:hover,
+.bucket-filter:hover,
+.pb-metric-filter:hover {
   color: var(--text);
   border-color: var(--text-dim);
 }
 
-.chart-filter.active {
+.chart-filter.active,
+.bin-filter.active,
+.bucket-filter.active,
+.pb-metric-filter.active {
   color: var(--accent);
   border-color: var(--accent);
   background: rgba(99, 102, 241, 0.1);
@@ -939,6 +948,75 @@ body {
 .modal-btn-cancel:hover {
   color: var(--text);
   border-color: var(--text-dim);
+}
+
+.modal-btn-danger {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
+.modal-btn-danger:hover {
+  background: #991b1b;
+  color: #fff;
+}
+
+/* Import diff modal */
+.import-modal {
+  width: 460px;
+}
+
+.import-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 12px;
+}
+
+.import-diff-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.import-diff-label {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.import-diff-sub {
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  display: block;
+  margin-top: 2px;
+}
+
+.import-diff-value {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.import-diff-value.zero {
+  color: var(--text-muted);
+}
+
+.import-modal-help {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.import-modal-help strong {
+  color: var(--text-dim);
 }
 
 /* Solves detail modal */
